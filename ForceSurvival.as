@@ -1,10 +1,14 @@
+#include "../maps/point_checkpoint"
+
+string cp_save_path = "scripts/plugins/store/ForceSurvival/";
+
 void print(string text) { g_Game.AlertMessage( at_console, text); }
 void println(string text) { print(text + "\n"); }
 
 void PluginInit()
 {
 	g_Module.ScriptInfo.SetAuthor( "w00tguy" );
-	g_Module.ScriptInfo.SetContactInfo( "github or sven discord" );
+	g_Module.ScriptInfo.SetContactInfo( "https://github.com/wootguy/ForceSurvival" );
 	
 	g_Hooks.RegisterHook( Hooks::Player::ClientSay, @ClientSay );
 	g_Hooks.RegisterHook( Hooks::Game::MapChange, @MapChange );
@@ -41,6 +45,34 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 	if (args[0] == ".togglesurvival" && isAdmin) {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.VoteToggle();
+	}
+	
+	if (args[0] == ".savesurvival" && isAdmin) {
+		save_checkpoints(plr);
+	}
+	
+	if (args[0] == ".deletecp" && isAdmin) {
+		float bestDist = 9e99;
+		CBaseEntity@ bestCp = null;
+		CBaseEntity@ ent = null;
+		do {
+			@ent = g_EntityFuncs.FindEntityInSphere(ent, plr.pev.origin, 150, "point_checkpoint", "classname");
+			if (ent !is null) {
+				float dist = (ent.pev.origin - plr.pev.origin).Length();
+				
+				if (dist < bestDist) {
+					bestDist = dist;
+					@bestCp = @ent;
+				}
+			}
+		} while (ent !is null);
+		
+		if (bestCp !is null) {
+			g_SoundSystem.EmitSound( bestCp.edict(), CHAN_ITEM, "debris/beamstart4.wav", 1.0f, ATTN_NORM );
+			g_EntityFuncs.Remove(bestCp);
+		} else {
+			g_PlayerFuncs.SayText(plr, "No nearby checkpoint to delete. Get closer to one.");
+		}
 	}
 	
 	if (args[0] == ".survival") {
@@ -82,7 +114,18 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 				g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now AUTO. Survival will be enabled on supported maps only.");
 			}
 		} else {
-			g_PlayerFuncs.SayText(plr, "ForceSurvival is " + currentMode);
+			g_PlayerFuncs.SayText(plr, "ForceSurvival is " + currentMode);			
+			
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '------------------------------ForceSurvival Commands------------------------------\n\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".survival" to show the current mode.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".survival [mode]" to change forced mode.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '    -1 = Default (no forced mode)\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     0 = Force OFF\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     1 = Force ON\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".cancelsurvival" to cancel an in-progress survival vote.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".savesurvival" save checkpoint data to the server.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".deletecp" to delete a nearby checkpoint.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '\n--------------------------------------------------------------------------\n');
 		}
 	}
 }
@@ -110,6 +153,60 @@ void MapInit() {
 	} else if (g_force_mode == 0) {
 		g_SurvivalMode.SetStartOn(false);
 	}
+	
+	// precache default checkpoint stuff
+	g_Game.PrecacheModel( "models/common/lambda.mdl" );
+	g_Game.PrecacheModel( "sprites/exit1.spr" );
+	g_SoundSystem.PrecacheSound( "../media/valve.mp3" );
+	g_SoundSystem.PrecacheSound( "debris/beamstart7.wav" );
+	g_SoundSystem.PrecacheSound( "ambience/port_suckout1.wav" );		
+	g_SoundSystem.PrecacheSound( "debris/beamstart4.wav" );
+}
+
+void MapActivate() {
+	if (g_CustomEntityFuncs.IsCustomEntity("point_checkpoint")) {
+		println("Checkpoint entity already registered");
+	} else {
+		println("Checkpoint not regeistereserd yet");
+		RegisterPointCheckPointEntity();
+	}
+}
+
+void save_checkpoints(CBasePlayer@ plr) {
+
+	string path = cp_save_path + g_Engine.mapname + ".ini";
+	File@ f = g_FileSystem.OpenFile( path, OpenFile::WRITE);
+	if (f is null or !f.IsOpen())
+	{
+		g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, "The folder '/svencoop/" + cp_save_path + "' does not exist! Unable to save checkpoint data.\n");
+		return;
+	}
+	
+	if( f.IsOpen() )
+	{
+		int numCps = 0;
+		
+		CBaseEntity@ ent = null;
+		do {
+			@ent = g_EntityFuncs.FindEntityByClassname(ent, "point_checkpoint");
+			if (ent !is null) {
+				numCps++;
+				Vector p = ent.pev.origin;
+				f.Write("" + int(p.x) + " " + int(p.y) + " " + int(p.z) + "\n");
+			}
+		} while (ent !is null);
+	
+		if (numCps > 0) {
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, "Saved " + path + "\n");
+		} else {
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, "No checkpoints in map. Deleting " + path + "\n");
+			f.Remove();
+		}
+		g_PlayerFuncs.SayText(plr, "Saved " + numCps + " checkpoints\n");
+		println("" + plr.pev.netname + " saved survival checkpoints");
+	}
+	else
+		println("Failed to open file: " + path);
 }
 
 HookReturnCode MapChange() {
@@ -191,7 +288,11 @@ void cancel_vote() {
 HookReturnCode ClientSay( SayParameters@ pParams ) {
 	CBasePlayer@ plr = pParams.GetPlayer();
 	const CCommand@ args = pParams.GetArguments();
-	if (args.ArgC() > 0 and (args[0].Find(".survival") == 0 || args[0].Find(".cancelsurvival") == 0 || args[0] == ".togglesurvival"))
+	if (args.ArgC() > 0 and (args[0].Find(".survival") == 0 
+							|| args[0].Find(".cancelsurvival") == 0
+							|| args[0] == ".togglesurvival"
+							|| args[0] == ".savesurvival"
+							|| args[0] == ".deletecp"))
 	{
 		doCommand(plr, args, false);
 		pParams.ShouldHide = true;
@@ -203,6 +304,8 @@ HookReturnCode ClientSay( SayParameters@ pParams ) {
 CClientCommand _survival("survival", "Survival mode commands", @consoleCmd );
 CClientCommand _survival2("cancelsurvival", "Survival mode commands", @consoleCmd );
 CClientCommand _survival3("togglesurvival", "Survival mode commands", @consoleCmd );
+CClientCommand _survival4("savesurvival", "Survival mode commands", @consoleCmd );
+CClientCommand _survival5("deletecp", "Survival mode commands", @consoleCmd );
 
 void consoleCmd( const CCommand@ args ) {
 	CBasePlayer@ plr = g_ConCommandSystem.GetCurrentPlayer();
