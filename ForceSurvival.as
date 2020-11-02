@@ -12,11 +12,14 @@ void PluginInit()
 	
 	g_Hooks.RegisterHook( Hooks::Player::ClientSay, @ClientSay );
 	g_Hooks.RegisterHook( Hooks::Game::MapChange, @MapChange );
+	
+	g_Scheduler.SetInterval("check_living_players", 1);
 }
 
 float g_vote_cancel_expire = 0;
 bool g_force_cancel_mode = false;
 bool g_vote_cancelling = false;
+bool g_no_restart_mode = false;
 
 int g_force_mode = -1;
 
@@ -45,6 +48,17 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 	if (args[0] == ".togglesurvival" && isAdmin) {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.VoteToggle();
+		
+		g_no_restart_mode = false;
+		
+		if (g_SurvivalMode.IsEnabled()) {
+			if (args.ArgC() > 1) {
+				if (args[1] == "2") {
+					g_no_restart_mode = true;
+					g_PlayerFuncs.SayTextAll(plr, "No-restart mode is enabled. Players will respawn if everyone dies.");
+				}
+			}
+		}
 	}
 	
 	if (args[0] == ".savesurvival" && isAdmin) {
@@ -79,28 +93,36 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		string currentMode = "AUTO";
 		if (g_force_mode == 0) currentMode = "OFF";
 		if (g_force_mode == 1) currentMode = "ON";
+		if (g_force_mode == 2) currentMode = "ON (no-restart mode)";
 	
 		if (args.ArgC() > 1 && isAdmin) {
 			int newMode = -1;
 			string larg = args[1].ToLowercase();
+			if (larg == "2") newMode = 2;
 			if (larg == "on" || larg == "1") newMode = 1;
 			if (larg == "off" || larg == "0") newMode = 0;
 		
 			if (newMode == g_force_mode) {
-				g_PlayerFuncs.SayText(plr, "ForceSurvival is already ON");
+				g_PlayerFuncs.SayText(plr, "ForceSurvival is already " + newMode);
 				return;
 			}
 			
 			g_force_mode = newMode;
+			g_no_restart_mode = false;
 		
-			if (newMode == 1) {
+			if (newMode == 1 || newMode == 2) {
 				if (!g_SurvivalMode.IsEnabled()) {
 					g_SurvivalMode.EnableMapSupport();
 					g_SurvivalMode.VoteToggle();
 				}
 				disable_survival_votes();
 				
-				g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON. All future maps will have survival enabled.");
+				if (newMode == 2) {
+					g_no_restart_mode = true;
+					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON (no-restart mode). All future maps will have survival enabled.");
+				} else {
+					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON. All future maps will have survival enabled.");
+				}
 			}
 			else if (newMode == 0) {
 				if (g_SurvivalMode.IsEnabled()) {
@@ -122,6 +144,9 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '    -1 = Default (no forced mode)\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     0 = Force OFF\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     1 = Force ON\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     2 = Force ON (no-restart mode). Players respawn if everyone dies.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".togglesurvival" to toggle survival mode for the current map.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".togglesurvival 2" to toggle survival mode for the current map (no-restart mode).\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".cancelsurvival" to cancel an in-progress survival vote.\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".savesurvival" save checkpoint data to the server.\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".deletecp" to delete a nearby checkpoint.\n');
@@ -146,10 +171,49 @@ void enable_survival_votes() {
 	g_EngineFuncs.ServerExecute();
 }
 
+bool respawning_everyone = false;
+void check_living_players() {
+	if (!g_no_restart_mode) {
+		return;
+	}
+	
+	if (!g_SurvivalMode.IsEnabled()) {
+		g_no_restart_mode = false;
+	}
+	
+	bool anyLiving = false;
+	
+	CBaseEntity@ ent = null;
+	do {
+		@ent = g_EntityFuncs.FindEntityByClassname(ent, "player");
+		if (ent !is null and ent.IsAlive()) {
+			anyLiving = true;
+		}
+	} while (ent !is null);
+	
+	if (anyLiving) {
+		return;
+	}
+	
+	if (!respawning_everyone) {
+		respawning_everyone = true;
+		g_PlayerFuncs.SayTextAll(getAnyPlayer(), "No-restart mode is enabled. Everyone will respawn shortly.\n");
+		g_Scheduler.SetTimeout("respawn_everyone", 3);
+	}
+}
+
+void respawn_everyone() {
+	respawning_everyone = false;
+	g_PlayerFuncs.RespawnAllPlayers(false, true);
+}
+
 void MapInit() {
-	if (g_force_mode == 1) {
+	if (g_force_mode == 1 || g_force_mode == 2) {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.SetStartOn(true);
+		if (g_force_mode == 2) {
+			g_no_restart_mode = true;
+		}
 	} else if (g_force_mode == 0) {
 		g_SurvivalMode.SetStartOn(false);
 	}
@@ -173,7 +237,6 @@ void MapActivate() {
 }
 
 void save_checkpoints(CBasePlayer@ plr) {
-
 	string path = cp_save_path + g_Engine.mapname + ".ini";
 	File@ f = g_FileSystem.OpenFile( path, OpenFile::WRITE);
 	if (f is null or !f.IsOpen())
