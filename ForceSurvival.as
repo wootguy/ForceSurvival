@@ -1,4 +1,4 @@
-#include "../maps/point_checkpoint"
+#include "../../maps/point_checkpoint"
 
 string cp_save_path = "scripts/plugins/store/ForceSurvival/";
 
@@ -20,6 +20,9 @@ float g_vote_cancel_expire = 0;
 bool g_force_cancel_mode = false;
 bool g_vote_cancelling = false;
 bool g_no_restart_mode = false;
+bool g_fake_survival_detected = false;
+bool g_respawning_everyone = false;
+bool g_restarting_fake_survival_map = false;
 
 int g_force_mode = -1;
 
@@ -171,14 +174,99 @@ void enable_survival_votes() {
 	g_EngineFuncs.ServerExecute();
 }
 
-bool respawning_everyone = false;
-void check_living_players() {
-	if (!g_no_restart_mode) {
+void check_living_players() {	
+	if (!g_SurvivalMode.IsEnabled()) {
+		g_no_restart_mode = false;
+	}
+	
+	int totalLiving = 0;
+	int totalPlayers = 0;
+	
+	CBaseEntity@ ent = null;
+	do {
+		@ent = g_EntityFuncs.FindEntityByClassname(ent, "player");
+		if (ent !is null) {
+			totalPlayers += 1;
+			if (ent.IsAlive()) {
+				totalLiving += 1;
+			}
+		}
+	} while (ent !is null);	
+	
+	if (detectFakeSurvivalMode()) {
+		if (!g_fake_survival_detected) {
+			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "Fake survival mode detected (no spawn points exist).\n");
+			g_fake_survival_detected = true;
+			g_EngineFuncs.ServerCommand("mp_observer_mode 1\n"); // no fun staring at your corpse
+		}
+	} else if (g_fake_survival_detected) {
+		g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "Fake survival mode is over.\n");
+		g_restarting_fake_survival_map = false;
+		g_fake_survival_detected = false;
+	}
+	
+	if (totalLiving > 0) {
 		return;
 	}
 	
-	if (!g_SurvivalMode.IsEnabled()) {
-		g_no_restart_mode = false;
+	if (g_no_restart_mode && !g_respawning_everyone) {
+		g_respawning_everyone = true;
+		g_PlayerFuncs.SayTextAll(getAnyPlayer(), "No-restart mode is enabled. Everyone will respawn shortly.\n");
+		g_Scheduler.SetTimeout("respawn_everyone", 3);
+	}
+	else if (g_fake_survival_detected && !g_restarting_fake_survival_map) {
+		g_restarting_fake_survival_map = true;
+		g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "No living players or spawn points exist. Map will restart in 10 seconds.\n");
+		g_Scheduler.SetTimeout("restart_map", 10);
+	}
+}
+
+bool detectFakeSurvivalMode() {
+	if (g_SurvivalMode.IsEnabled()) {
+		return false;
+	}
+	
+	CBaseEntity@ ent = null;
+	do {
+		@ent = g_EntityFuncs.FindEntityByClassname(ent, "info_player_*");
+		if (ent !is null and isSpawnPointEnabled(ent)) {
+			return false;
+		}
+	} while (ent !is null);
+	
+	return true;
+}
+
+bool isSpawnPointEnabled(CBaseEntity@ spawnPoint) {
+	bool anyoneDead = false;
+
+	for ( int i = 1; i <= g_Engine.maxClients; i++ )
+	{
+		CBasePlayer@ p = g_PlayerFuncs.FindPlayerByIndex(i);
+		if (p is null or !p.IsConnected())
+			continue;
+		
+		int oldDead = p.pev.deadflag;
+		p.pev.deadflag = DEAD_DEAD;
+		bool isValid = g_PlayerFuncs.IsSpawnPointValid(spawnPoint, p);
+		p.pev.deadflag = oldDead;
+		
+		if (isValid)
+			return true;
+	}
+	
+	// can't detect if spawn point is enabled until someone is dead, so assume it works if everyone is alive
+	return false;
+}
+
+void respawn_everyone() {
+	g_respawning_everyone = false;
+	g_PlayerFuncs.RespawnAllPlayers(false, true);
+}
+
+void restart_map() {
+	if (!g_restarting_fake_survival_map) {
+		return; // fake survival mode ended before restart
 	}
 	
 	bool anyLiving = false;
@@ -191,20 +279,15 @@ void check_living_players() {
 		}
 	} while (ent !is null);
 	
+	g_restarting_fake_survival_map = false;
+	g_fake_survival_detected = false;
+	
 	if (anyLiving) {
+		g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "Living players detected. Map restart aborted.\n");
 		return;
 	}
 	
-	if (!respawning_everyone) {
-		respawning_everyone = true;
-		g_PlayerFuncs.SayTextAll(getAnyPlayer(), "No-restart mode is enabled. Everyone will respawn shortly.\n");
-		g_Scheduler.SetTimeout("respawn_everyone", 3);
-	}
-}
-
-void respawn_everyone() {
-	respawning_everyone = false;
-	g_PlayerFuncs.RespawnAllPlayers(false, true);
+	g_EngineFuncs.ServerCommand("changelevel " + g_Engine.mapname + "\n");
 }
 
 void MapInit() {
