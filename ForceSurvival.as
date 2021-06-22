@@ -2,19 +2,10 @@
 
 string cp_save_path = "scripts/plugins/store/ForceSurvival/";
 
+CCVar@ g_crossPluginToggle;
+
 void print(string text) { g_Game.AlertMessage( at_console, text); }
 void println(string text) { print(text + "\n"); }
-
-void PluginInit()
-{
-	g_Module.ScriptInfo.SetAuthor( "w00tguy" );
-	g_Module.ScriptInfo.SetContactInfo( "https://github.com/wootguy/ForceSurvival" );
-	
-	g_Hooks.RegisterHook( Hooks::Player::ClientSay, @ClientSay );
-	g_Hooks.RegisterHook( Hooks::Game::MapChange, @MapChange );
-	
-	g_Scheduler.SetInterval("check_living_players", 1);
-}
 
 float g_vote_cancel_expire = 0;
 bool g_force_cancel_mode = false;
@@ -30,6 +21,20 @@ CScheduledFunction@ g_cancel_schedule = null;
 
 array<EHandle> g_dead_players;
 array<EHandle> g_gibbed_players;
+
+void PluginInit()
+{
+	g_Module.ScriptInfo.SetAuthor( "w00tguy" );
+	g_Module.ScriptInfo.SetContactInfo( "https://github.com/wootguy/ForceSurvival" );
+	
+	g_Hooks.RegisterHook( Hooks::Player::ClientSay, @ClientSay );
+	g_Hooks.RegisterHook( Hooks::Game::MapChange, @MapChange );
+	
+	g_Scheduler.SetInterval("check_cross_plugin_toggle", 1);
+	g_Scheduler.SetInterval("check_living_players", 1);
+	
+	@g_crossPluginToggle = CCVar("mode", -1, "Toggle survival mode from other plugins via this CVar", ConCommandFlag::AdminOnly);
+}
 
 void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 	bool isAdmin = g_PlayerFuncs.AdminLevel(plr) >= ADMIN_YES;
@@ -172,6 +177,25 @@ void disable_survival_votes() {
 void enable_survival_votes() {
 	g_EngineFuncs.ServerCommand("mp_survival_voteallow -1;\n");
 	g_EngineFuncs.ServerExecute();
+}
+
+void check_cross_plugin_toggle() {
+	if (g_crossPluginToggle.GetInt() != -1) {
+		
+		bool shouldEnable = g_crossPluginToggle.GetInt() > 0;
+	
+		if (shouldEnable != g_SurvivalMode.IsEnabled()) {
+			g_SurvivalMode.EnableMapSupport();
+			g_SurvivalMode.VoteToggle();
+		}
+		
+		if (g_crossPluginToggle.GetInt() == 2) {
+			g_no_restart_mode = true;
+			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "No-restart mode is enabled. Players will respawn if everyone dies.");
+		}
+		
+		g_crossPluginToggle.SetInt(-1);
+	}
 }
 
 void check_living_players() {	
