@@ -210,12 +210,21 @@ void check_living_players() {
 	do {
 		@ent = g_EntityFuncs.FindEntityByClassname(ent, "player");
 		if (ent !is null) {
+			CBasePlayer@ plr = cast<CBasePlayer@>(ent);
+			if (!plr.IsConnected()) {
+				continue;
+			}
+			
 			totalPlayers += 1;
 			if (ent.IsAlive()) {
 				totalLiving += 1;
 			}
 		}
-	} while (ent !is null);	
+	} while (ent !is null);
+	
+	if (totalPlayers == 0) {
+		return;
+	}
 	
 	if (detectFakeSurvivalMode()) {
 		if (!g_fake_survival_detected) {
