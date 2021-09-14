@@ -14,6 +14,7 @@ bool g_no_restart_mode = false;
 bool g_fake_survival_detected = false;
 bool g_respawning_everyone = false;
 bool g_restarting_fake_survival_map = false;
+int g_wait_fake_detect = 0; // wait a second to be sure fake survival is really enabled (could just be new spawns toggling)
 
 int g_force_mode = -1;
 
@@ -256,6 +257,7 @@ void check_living_players() {
 
 bool detectFakeSurvivalMode() {
 	if (g_SurvivalMode.IsEnabled()) {
+		g_wait_fake_detect = 0;
 		return false;
 	}
 	
@@ -263,10 +265,17 @@ bool detectFakeSurvivalMode() {
 	do {
 		@ent = g_EntityFuncs.FindEntityByClassname(ent, "info_player_*");
 		if (ent !is null and isSpawnPointEnabled(ent)) {
+			g_wait_fake_detect = 0;
 			return false;
 		}
 	} while (ent !is null);
 	
+	if (!g_fake_survival_detected and g_wait_fake_detect < 2) {
+		g_wait_fake_detect += 1;
+		return false;
+	}
+	
+	g_wait_fake_detect = 0;
 	return true;
 }
 
