@@ -239,7 +239,7 @@ void updateRespawnTimer(CBasePlayer@ plr) {
 }
 
 void check_living_players() {	
-	if (!g_SurvivalMode.IsEnabled()) {
+	if (!g_SurvivalMode.IsEnabled() || !g_SurvivalMode.IsActive()) {
 		g_no_restart_mode = false;
 	}
 	
@@ -292,7 +292,7 @@ void check_living_players() {
 		respawn_everyone();
 		totalLiving = totalPlayers;
 	}
-	if (totalLiving == totalPlayers) {
+	if (g_no_restart_mode and totalLiving == totalPlayers) {
 		setupNoRestartSurvival(); // reset the timer until at least one player is dead
 	}
 	
