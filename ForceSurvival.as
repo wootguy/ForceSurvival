@@ -3,6 +3,7 @@
 string cp_save_path = "scripts/plugins/store/ForceSurvival/";
 
 CCVar@ g_crossPluginToggle;
+CCVar@ g_respawnWaveTime;
 
 void print(string text) { g_Game.AlertMessage( at_console, text); }
 void println(string text) { print(text + "\n"); }
@@ -15,6 +16,7 @@ bool g_fake_survival_detected = false;
 bool g_respawning_everyone = false;
 bool g_restarting_fake_survival_map = false;
 int g_wait_fake_detect = 0; // wait a second to be sure fake survival is really enabled (could just be new spawns toggling)
+float g_next_respawn_wave = 0;
 
 int g_force_mode = -1;
 
@@ -35,6 +37,24 @@ void PluginInit()
 	g_Scheduler.SetInterval("check_living_players", 1);
 	
 	@g_crossPluginToggle = CCVar("mode", -1, "Toggle survival mode from other plugins via this CVar", ConCommandFlag::AdminOnly);
+	@g_respawnWaveTime = CCVar("waveTime", 2*60, "Time in seconds for wave respawns", ConCommandFlag::AdminOnly);
+}
+
+string formatTime(float t, bool statsPage=false) {
+	int rounded = int(t + 0.5f);
+	
+	int minutes = rounded / 60;
+	int seconds = rounded % 60;
+	
+	if (minutes > 0) {
+		string ss = "" + seconds;
+		if (seconds < 10) {
+			ss = "0" + ss;
+		}
+		return "" + minutes + ":" + ss + " minutes";
+	} else {
+		return "" + seconds + " seconds";
+	}
 }
 
 void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
@@ -63,8 +83,8 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		if (g_SurvivalMode.IsEnabled()) {
 			if (args.ArgC() > 1) {
 				if (args[1] == "2") {
-					g_no_restart_mode = true;
-					g_PlayerFuncs.SayTextAll(plr, "No-restart mode is enabled. Players will respawn if everyone dies.");
+					setupNoRestartSurvival();
+					g_PlayerFuncs.SayTextAll(plr, "[SemiSurvival] Players will respawn every " + formatTime(g_respawnWaveTime.GetInt()) + ".");
 				}
 			}
 		}
@@ -102,7 +122,7 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		string currentMode = "AUTO";
 		if (g_force_mode == 0) currentMode = "OFF";
 		if (g_force_mode == 1) currentMode = "ON";
-		if (g_force_mode == 2) currentMode = "ON (no-restart mode)";
+		if (g_force_mode == 2) currentMode = "ON (semi-survival mode)";
 	
 		if (args.ArgC() > 1 && isAdmin) {
 			int newMode = -1;
@@ -127,8 +147,8 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 				disable_survival_votes();
 				
 				if (newMode == 2) {
-					g_no_restart_mode = true;
-					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON (no-restart mode). All future maps will have survival enabled.");
+					setupNoRestartSurvival();
+					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON (semi-survival mode). All future maps will have survival enabled.");
 				} else {
 					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON. All future maps will have survival enabled.");
 				}
@@ -153,15 +173,20 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '    -1 = Default (no forced mode)\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     0 = Force OFF\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     1 = Force ON\n');
-			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     2 = Force ON (no-restart mode). Players respawn if everyone dies.\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '     2 = Force ON (semi-survival mode). Players respawn if everyone dies.\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".togglesurvival" to toggle survival mode for the current map.\n');
-			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".togglesurvival 2" to toggle survival mode for the current map (no-restart mode).\n');
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".togglesurvival 2" to toggle survival mode for the current map (semi-survival mode).\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".cancelsurvival" to cancel an in-progress survival vote.\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".savesurvival" save checkpoint data to the server.\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, 'Type ".deletecp" to delete a nearby checkpoint.\n');
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCONSOLE, '\n--------------------------------------------------------------------------\n');
 		}
 	}
+}
+
+void setupNoRestartSurvival() {
+	g_no_restart_mode = true;
+	g_next_respawn_wave = g_Engine.time + g_respawnWaveTime.GetInt();
 }
 
 void abort_vote_cancel() {
@@ -191,12 +216,26 @@ void check_cross_plugin_toggle() {
 		}
 		
 		if (g_crossPluginToggle.GetInt() == 2) {
-			g_no_restart_mode = true;
-			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "No-restart mode is enabled. Players will respawn if everyone dies.");
+			setupNoRestartSurvival();
+			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[SemiSurvival] Players will respawn if everyone dies.");
 		}
 		
 		g_crossPluginToggle.SetInt(-1);
 	}
+}
+
+void updateRespawnTimer(CBasePlayer@ plr) {	
+	HUDNumDisplayParams params;
+	params.value = (g_next_respawn_wave - g_Engine.time) + 0.99f;
+	params.x = 0;
+	params.y = 0.91;
+	params.color1 = RGBA_SVENCOOP;
+	params.spritename = "stopwatch";
+	params.channel = 15;
+	params.flags = HUD_ELEM_SCR_CENTER_X | HUD_ELEM_DEFAULT_ALPHA |
+		HUD_TIME_MINUTES | HUD_TIME_SECONDS | HUD_TIME_COUNT_DOWN;
+	
+	g_PlayerFuncs.HudTimeDisplay( plr, params );
 }
 
 void check_living_players() {	
@@ -217,8 +256,17 @@ void check_living_players() {
 			}
 			
 			totalPlayers += 1;
-			if (ent.IsAlive()) {
+			if (plr.IsAlive()) {
 				totalLiving += 1;
+				
+				if (g_no_restart_mode) {
+					HUDNumDisplayParams hideParams;
+					hideParams.channel = 15;
+					hideParams.flags = HUD_ELEM_HIDDEN;
+					g_PlayerFuncs.HudTimeDisplay(plr, hideParams);
+				}
+			} else if (g_no_restart_mode) {
+				updateRespawnTimer(plr);
 			}
 		}
 	} while (ent !is null);
@@ -239,14 +287,22 @@ void check_living_players() {
 		g_fake_survival_detected = false;
 	}
 	
+	if (g_no_restart_mode && g_next_respawn_wave < g_Engine.time && totalLiving < totalPlayers) {		
+		g_PlayerFuncs.ClientPrintAll(HUD_PRINTNOTIFY, "[SemiSurvival] Respawning dead players.\n");
+		respawn_everyone();
+		totalLiving = totalPlayers;
+	}
+	if (totalLiving == totalPlayers) {
+		setupNoRestartSurvival(); // reset the timer until at least one player is dead
+	}
+	
 	if (totalLiving > 0) {
 		return;
 	}
 	
 	if (g_no_restart_mode && !g_respawning_everyone) {
 		g_respawning_everyone = true;
-		g_PlayerFuncs.SayTextAll(getAnyPlayer(), "No-restart mode is enabled. Everyone will respawn shortly.\n");
-		g_Scheduler.SetTimeout("respawn_everyone", 3);
+		g_next_respawn_wave = g_Engine.time + 4;
 	}
 	else if (g_fake_survival_detected && !g_restarting_fake_survival_map) {
 		g_restarting_fake_survival_map = true;
@@ -304,6 +360,12 @@ bool isSpawnPointEnabled(CBaseEntity@ spawnPoint) {
 void respawn_everyone() {
 	g_respawning_everyone = false;
 	g_PlayerFuncs.RespawnAllPlayers(false, true);
+	g_next_respawn_wave = g_Engine.time + g_respawnWaveTime.GetInt();
+	
+	HUDNumDisplayParams hideParams;
+	hideParams.channel = 15;
+	hideParams.flags = HUD_ELEM_HIDDEN;
+	g_PlayerFuncs.HudTimeDisplay(null, hideParams);
 }
 
 void restart_map() {
@@ -337,7 +399,7 @@ void MapInit() {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.SetStartOn(true);
 		if (g_force_mode == 2) {
-			g_no_restart_mode = true;
+			setupNoRestartSurvival();
 		}
 	} else if (g_force_mode == 0) {
 		g_SurvivalMode.SetStartOn(false);
