@@ -17,6 +17,8 @@ bool g_respawning_everyone = false;
 bool g_restarting_fake_survival_map = false;
 int g_wait_fake_detect = 0; // wait a second to be sure fake survival is really enabled (could just be new spawns toggling)
 float g_next_respawn_wave = 0;
+string g_next_cycle_map = ""; // next map expected if a game_end or map vote is triggered
+							  // (depends on rtv setting mp_nextmap_cycle before changing levels)
 
 int g_force_mode = -1;
 
@@ -217,7 +219,7 @@ void check_cross_plugin_toggle() {
 		
 		if (g_crossPluginToggle.GetInt() == 2) {
 			setupNoRestartSurvival();
-			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[SemiSurvival] Players will respawn if everyone dies.");
+			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[SemiSurvival] Players will respawn every " + formatTime(g_respawnWaveTime.GetInt()) + ".");
 		}
 		
 		g_crossPluginToggle.SetInt(-1);
@@ -239,7 +241,7 @@ void updateRespawnTimer(CBasePlayer@ plr) {
 }
 
 void check_living_players() {	
-	if (!g_SurvivalMode.IsEnabled() || !g_SurvivalMode.IsActive()) {
+	if (!g_SurvivalMode.IsEnabled() || !g_SurvivalMode.MapSupportEnabled()) {
 		g_no_restart_mode = false;
 	}
 	
@@ -287,8 +289,10 @@ void check_living_players() {
 		g_fake_survival_detected = false;
 	}
 	
-	if (g_no_restart_mode && g_next_respawn_wave < g_Engine.time && totalLiving < totalPlayers) {		
-		g_PlayerFuncs.ClientPrintAll(HUD_PRINTNOTIFY, "[SemiSurvival] Respawning dead players.\n");
+	if (g_no_restart_mode && g_next_respawn_wave < g_Engine.time && totalLiving < totalPlayers) {
+		int deadCount = totalPlayers - totalLiving;
+		string ess = (deadCount == 1) ? "" : "s";
+		g_PlayerFuncs.ClientPrintAll(HUD_PRINTNOTIFY, "[SemiSurvival] Respawning " + deadCount + " dead player" + ess + ".\n");
 		respawn_everyone();
 		totalLiving = totalPlayers;
 	}
@@ -395,10 +399,20 @@ void restart_map() {
 }
 
 void MapInit() {
-	if (g_force_mode == 1 || g_force_mode == 2) {
+	bool isMapSeries = g_next_cycle_map != g_Engine.mapname;
+	bool shouldContinueSemiSurvival = isMapSeries && g_no_restart_mode;
+	
+	if (g_no_restart_mode) {
+		println("semi-survival mode " + shouldContinueSemiSurvival + "  because " + g_next_cycle_map + " was the expected next map for game_end/rtv. This map is " + g_Engine.mapname);
+		if (!shouldContinueSemiSurvival) {
+			g_no_restart_mode = false;
+		}
+	}
+
+	if (g_force_mode == 1 || g_force_mode == 2 || shouldContinueSemiSurvival) {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.SetStartOn(true);
-		if (g_force_mode == 2) {
+		if (g_force_mode == 2 || shouldContinueSemiSurvival) {
 			setupNoRestartSurvival();
 		}
 	} else if (g_force_mode == 0) {
@@ -461,6 +475,7 @@ void save_checkpoints(CBasePlayer@ plr) {
 
 HookReturnCode MapChange() {
 	abort_vote_cancel();
+	g_next_cycle_map = g_MapCycle.GetNextMap();
 	return HOOK_CONTINUE;
 }
 
