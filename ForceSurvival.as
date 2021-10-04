@@ -27,6 +27,11 @@ CScheduledFunction@ g_cancel_schedule = null;
 array<EHandle> g_dead_players;
 array<EHandle> g_gibbed_players;
 
+// maps_excluded doesn't work for plugins that have delayed removal
+array<string> fake_survival_exclusions = {
+	"fallguys"
+};
+
 void PluginInit()
 {
 	g_Module.ScriptInfo.SetAuthor( "w00tguy" );
@@ -316,7 +321,7 @@ void check_living_players() {
 }
 
 bool detectFakeSurvivalMode() {
-	if (g_SurvivalMode.IsEnabled()) {
+	if (g_SurvivalMode.IsEnabled() || fake_survival_exclusions.find(g_Engine.mapname) != -1) {
 		g_wait_fake_detect = 0;
 		return false;
 	}
