@@ -17,8 +17,6 @@ bool g_respawning_everyone = false;
 bool g_restarting_fake_survival_map = false;
 int g_wait_fake_detect = 0; // wait a second to be sure fake survival is really enabled (could just be new spawns toggling)
 float g_next_respawn_wave = 0;
-string g_next_cycle_map = ""; // next map expected if a game_end or map vote is triggered
-							  // (depends on rtv setting mp_nextmap_cycle before changing levels)
 
 int g_force_mode = -1;
 
@@ -404,20 +402,10 @@ void restart_map() {
 }
 
 void MapInit() {
-	bool isMapSeries = g_next_cycle_map != g_Engine.mapname;
-	bool shouldContinueSemiSurvival = isMapSeries && g_no_restart_mode;
-	
-	if (g_no_restart_mode) {
-		println("semi-survival mode " + shouldContinueSemiSurvival + "  because " + g_next_cycle_map + " was the expected next map for game_end/rtv. This map is " + g_Engine.mapname);
-		if (!shouldContinueSemiSurvival) {
-			g_no_restart_mode = false;
-		}
-	}
-
-	if (g_force_mode == 1 || g_force_mode == 2 || shouldContinueSemiSurvival) {
+	if (g_force_mode == 1 || g_force_mode == 2) {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.SetStartOn(true);
-		if (g_force_mode == 2 || shouldContinueSemiSurvival) {
+		if (g_force_mode == 2) {
 			setupNoRestartSurvival();
 		}
 	} else if (g_force_mode == 0) {
@@ -480,7 +468,6 @@ void save_checkpoints(CBasePlayer@ plr) {
 
 HookReturnCode MapChange() {
 	abort_vote_cancel();
-	g_next_cycle_map = g_MapCycle.GetNextMap();
 	return HOOK_CONTINUE;
 }
 
