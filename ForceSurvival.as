@@ -324,14 +324,9 @@ bool detectFakeSurvivalMode() {
 		return false;
 	}
 	
-	CBaseEntity@ ent = null;
-	do {
-		@ent = g_EntityFuncs.FindEntityByClassname(ent, "info_player_*");
-		if (ent !is null and isSpawnPointEnabled(ent)) {
-			g_wait_fake_detect = 0;
-			return false;
-		}
-	} while (ent !is null);
+	if (areAnySpawnsEnabled()) {
+		g_wait_fake_detect = 0;
+	}
 	
 	if (!g_fake_survival_detected and g_wait_fake_detect < 2) {
 		g_wait_fake_detect += 1;
@@ -340,6 +335,18 @@ bool detectFakeSurvivalMode() {
 	
 	g_wait_fake_detect = 0;
 	return true;
+}
+
+bool areAnySpawnsEnabled() {
+	CBaseEntity@ ent = null;
+	do {
+		@ent = g_EntityFuncs.FindEntityByClassname(ent, "info_player_*");
+		if (ent !is null and isSpawnPointEnabled(ent)) {
+			return true;
+		}
+	} while (ent !is null);
+	
+	return false;
 }
 
 bool isSpawnPointEnabled(CBaseEntity@ spawnPoint) {
@@ -373,6 +380,17 @@ void respawn_everyone() {
 	hideParams.channel = 15;
 	hideParams.flags = HUD_ELEM_HIDDEN;
 	g_PlayerFuncs.HudTimeDisplay(null, hideParams);
+	
+	if (!areAnySpawnsEnabled()) {	
+		for ( int i = 1; i <= g_Engine.maxClients; i++ ) {
+			CBasePlayer@ p = g_PlayerFuncs.FindPlayerByIndex(i);
+			
+			if (p is null or !p.IsConnected() or p.IsAlive())
+				continue;
+			
+			p.EndRevive(0);
+		}
+	}
 }
 
 void restart_map() {
