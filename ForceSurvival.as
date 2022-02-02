@@ -27,7 +27,8 @@ array<EHandle> g_gibbed_players;
 
 // maps_excluded doesn't work for plugins that have delayed removal
 array<string> fake_survival_exclusions = {
-	"fallguys"
+	"fallguys",
+	"shitty_pubg"
 };
 
 void PluginInit()
@@ -420,6 +421,8 @@ void restart_map() {
 }
 
 void MapInit() {
+	g_no_restart_mode = false; // don't continue this unless RTV plugin says too
+
 	if (g_force_mode == 1 || g_force_mode == 2) {
 		g_SurvivalMode.EnableMapSupport();
 		g_SurvivalMode.SetStartOn(true);
