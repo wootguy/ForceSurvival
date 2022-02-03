@@ -226,6 +226,11 @@ void check_cross_plugin_toggle() {
 			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "[SemiSurvival] Players will respawn every " + formatTime(g_respawnWaveTime.GetInt()) + ".");
 		}
 		
+		if (g_crossPluginToggle.GetInt() == 3) {
+			g_no_restart_mode = false;
+			g_PlayerFuncs.ClientPrintAll(HUD_PRINTTALK, "Semi-survival mode disabled. Players will not respawn anymore.");
+		}
+		
 		g_crossPluginToggle.SetInt(-1);
 	}
 }
