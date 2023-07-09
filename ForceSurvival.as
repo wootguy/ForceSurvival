@@ -28,7 +28,14 @@ array<EHandle> g_gibbed_players;
 // maps_excluded doesn't work for plugins that have delayed removal
 array<string> fake_survival_exclusions = {
 	"fallguys",
-	"shitty_pubg"
+	"fallguys_s2",
+	"fallguys_s3",
+	"shitty_pubg",
+	"ragemap2020",
+	"ragemap2021",
+	"arcade",
+	"sven_dust2",
+	"grunts_party_v2"
 };
 
 void PluginInit()
@@ -70,6 +77,8 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		g_vote_cancel_expire = g_Engine.time + g_EngineFuncs.CVarGetFloat("mp_votetimecheck");
 		g_force_cancel_mode = g_SurvivalMode.IsActive();
 		
+		g_Log.PrintF("[Admin] " + plr.pev.netname + " did " + args[0] + "\n");
+		
 		disable_survival_votes();
 		
 		g_Scheduler.RemoveTimer(g_cancel_schedule);
@@ -77,7 +86,7 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		g_vote_cancelling = true;
 		
 		string voteMode = g_SurvivalMode.IsEnabled() ? "disable" : "enable";
-		g_PlayerFuncs.SayTextAll(plr, "" + plr.pev.netname + " is cancelling votes to " + voteMode + " survival mode");
+		g_PlayerFuncs.SayTextAll(plr, "" + plr.pev.netname + " is cancelling votes to " + voteMode + " survival mode\n");
 	}
 	
 	if (args[0] == ".togglesurvival" && isAdmin) {
@@ -85,18 +94,20 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		g_SurvivalMode.VoteToggle();
 		
 		g_no_restart_mode = false;
+		g_Log.PrintF("[Admin] " + plr.pev.netname + " did " + args[0] + "\n");
 		
 		if (g_SurvivalMode.IsEnabled()) {
 			if (args.ArgC() > 1) {
 				if (args[1] == "2") {
 					setupNoRestartSurvival();
-					g_PlayerFuncs.SayTextAll(plr, "[SemiSurvival] Players will respawn every " + formatTime(g_respawnWaveTime.GetInt()) + ".");
+					g_PlayerFuncs.SayTextAll(plr, "[SemiSurvival] Players will respawn every " + formatTime(g_respawnWaveTime.GetInt()) + ".\n");
 				}
 			}
 		}
 	}
 	
 	if (args[0] == ".savesurvival" && isAdmin) {
+		g_Log.PrintF("[Admin] " + plr.pev.netname + " did " + args[0] + "\n");
 		save_checkpoints(plr);
 	}
 	
@@ -120,7 +131,7 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 			g_SoundSystem.EmitSound( bestCp.edict(), CHAN_ITEM, "debris/beamstart4.wav", 1.0f, ATTN_NORM );
 			g_EntityFuncs.Remove(bestCp);
 		} else {
-			g_PlayerFuncs.SayText(plr, "No nearby checkpoint to delete. Get closer to one.");
+			g_PlayerFuncs.SayText(plr, "No nearby checkpoint to delete. Get closer to one.\n");
 		}
 	}
 	
@@ -131,6 +142,8 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 		if (g_force_mode == 2) currentMode = "ON (semi-survival mode)";
 	
 		if (args.ArgC() > 1 && isAdmin) {
+			g_Log.PrintF("[Admin] " + plr.pev.netname + " did " + args[0] + " " + args[1] + "\n");
+			
 			int newMode = -1;
 			string larg = args[1].ToLowercase();
 			if (larg == "2") newMode = 2;
@@ -138,7 +151,7 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 			if (larg == "off" || larg == "0") newMode = 0;
 		
 			if (newMode == g_force_mode) {
-				g_PlayerFuncs.SayText(plr, "ForceSurvival is already " + newMode);
+				g_PlayerFuncs.SayText(plr, "ForceSurvival is already " + newMode + "\n");
 				return;
 			}
 			
@@ -154,9 +167,9 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 				
 				if (newMode == 2) {
 					setupNoRestartSurvival();
-					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON (semi-survival mode). All future maps will have survival enabled.");
+					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON (semi-survival mode). All future maps will have survival enabled.\n");
 				} else {
-					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON. All future maps will have survival enabled.");
+					g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now ON. All future maps will have survival enabled.\n");
 				}
 			}
 			else if (newMode == 0) {
@@ -165,10 +178,10 @@ void doCommand(CBasePlayer@ plr, const CCommand@ args, bool inConsole) {
 				}
 				disable_survival_votes();
 			
-				g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now OFF. All future maps will have survival disabled.");
+				g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now OFF. All future maps will have survival disabled.\n");
 			} else {
 				enable_survival_votes();
-				g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now AUTO. Survival will be enabled on supported maps only.");
+				g_PlayerFuncs.SayTextAll(plr, "ForceSurvival is now AUTO. Survival will be enabled on supported maps only.\n");
 			}
 		} else {
 			g_PlayerFuncs.SayText(plr, "ForceSurvival is " + currentMode);			
